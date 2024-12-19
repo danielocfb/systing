@@ -7,7 +7,7 @@ license = "MIT"
 description = "A libbpf based tracer to figure out what an application is doing"
 
 [build-dependencies]
-libbpf-cargo = "0.25.0-beta"
+libbpf-cargo = { version = "0.25.0-beta.1", git = "https://github.com/libbpf/libbpf-rs.git", rev = "f05c8222fd3784181c3ad940a7d3b891a1b87bf5" }
 
 [dependencies]
 anyhow = "1.0"
@@ -17,7 +17,7 @@ clap = { version = "4.5.20", features = ["derive"] }
 ctrlc = "3.4"
 graphviz-rust = "0.9.3"
 inferno = "0.12.0"
-libbpf-rs = "0.25.0-beta"
+libbpf-rs = { version = "0.25.0-beta.1", git = "https://github.com/libbpf/libbpf-rs.git", rev = "f05c8222fd3784181c3ad940a7d3b891a1b87bf5" }
 libc = "0.2"
 petgraph = "0.6.5"
 plain = "0.2"

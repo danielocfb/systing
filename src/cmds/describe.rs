@@ -624,65 +624,65 @@ pub fn describe(opts: DescribeOpts) -> Result<()> {
         0
     });
 
-    let task_link = Arc::new(skel.links.dump_task.as_ref().unwrap());
-    let task_link_clone = task_link.clone();
+    let task_link = skel.links.dump_task.as_ref().unwrap();
     let samples = Arc::new(Mutex::new(HashMap::<u32, SampleEvent>::new()));
     let samples_clone = samples.clone();
     let samples_thread_done = thread_done.clone();
-    let sample_thread = thread::spawn(move || {
-        let delay = Duration::from_millis(100);
-        while !samples_thread_done.load(Ordering::Relaxed) {
-            thread::sleep(delay);
-            let mut iter = Iter::new(*task_link_clone).expect("Failed to create iterator");
-            let mut buf = Vec::new();
-            let bytes_read = iter
-                .read_to_end(&mut buf)
-                .expect("Failed to read from iterator");
-            if bytes_read == 0 {
-                println!("No data read from iterator");
-                continue;
-            }
+    thread::scope(move |scope| {
+        scope.spawn(move || {
+            let delay = Duration::from_millis(100);
+            while !samples_thread_done.load(Ordering::Relaxed) {
+                thread::sleep(delay);
+                let mut iter = Iter::new(task_link).expect("Failed to create iterator");
+                let mut buf = Vec::new();
+                let bytes_read = iter
+                    .read_to_end(&mut buf)
+                    .expect("Failed to read from iterator");
+                if bytes_read == 0 {
+                    println!("No data read from iterator");
+                    continue;
+                }
 
-            println!("Read {} bytes from iterator", bytes_read);
-            let items: &[systing::types::wakee_stack] =
-                plain::slice_from_bytes(&buf).expect("Data buffer was too short");
-            let mut my_samples = samples_clone.lock().unwrap();
-            for item in items {
-                let pid = item.start_ns as u32;
-                let key = SampleKey {
-                    pid,
-                    stack: Stack::new(
-                        item.kernel_stack.iter().copied().collect(),
-                        item.user_stack.iter().copied().collect(),
-                    ),
-                };
-                match my_samples.get_mut(&key.pid) {
-                    Some(ref mut sample) => {
-                        sample.add_event(key);
-                    }
-                    None => {
-                        let mut sample = SampleEvent::new();
-                        sample.add_event(key);
-                        my_samples.insert(pid, sample);
-                    }
-                };
+                println!("Read {} bytes from iterator", bytes_read);
+                let items: &[systing::types::wakee_stack] =
+                    plain::slice_from_bytes(&buf).expect("Data buffer was too short");
+                let mut my_samples = samples_clone.lock().unwrap();
+                for item in items {
+                    let pid = item.start_ns as u32;
+                    let key = SampleKey {
+                        pid,
+                        stack: Stack::new(
+                            item.kernel_stack.iter().copied().collect(),
+                            item.user_stack.iter().copied().collect(),
+                        ),
+                    };
+                    match my_samples.get_mut(&key.pid) {
+                        Some(ref mut sample) => {
+                            sample.add_event(key);
+                        }
+                        None => {
+                            let mut sample = SampleEvent::new();
+                            sample.add_event(key);
+                            my_samples.insert(pid, sample);
+                        }
+                    };
+                }
             }
+        });
+
+        if opts.duration > 0 {
+            thread::sleep(Duration::from_secs(opts.duration));
+        } else {
+            let (tx, rx) = channel();
+            ctrlc::set_handler(move || tx.send(()).expect("Could not send signal on channel."))
+                .expect("Error setting Ctrl-C handler");
+            println!("Press Ctrl-C to stop");
+            rx.recv().expect("Could not receive signal on channel.");
         }
+
+        thread_done.store(true, Ordering::Relaxed);
+        t.join().expect("Failed to join thread");
     });
-
-    if opts.duration > 0 {
-        thread::sleep(Duration::from_secs(opts.duration));
-    } else {
-        let (tx, rx) = channel();
-        ctrlc::set_handler(move || tx.send(()).expect("Could not send signal on channel."))
-            .expect("Error setting Ctrl-C handler");
-        println!("Press Ctrl-C to stop");
-        rx.recv().expect("Could not receive signal on channel.");
-    }
-
-    thread_done.store(true, Ordering::Relaxed);
-    t.join().expect("Failed to join thread");
-    sample_thread.join().expect("Failed to join thread");
 
     let mut process_events_vec: Vec<ProcessEvents> = Vec::new();
     let mut graph = DiGraphMap::new();
